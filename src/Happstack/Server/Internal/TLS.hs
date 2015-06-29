@@ -6,6 +6,7 @@ module Happstack.Server.Internal.TLS where
 import Control.Concurrent                         (forkIO, killThread, myThreadId)
 import Control.Exception.Extensible               as E
 import Control.Monad                              (forever, when)
+import Data.Default.Class
 import Data.Time                                  (UTCTime)
 import GHC.IO.Exception                           (IOErrorType(..))
 import Happstack.Server.Internal.Listen           (listenOn)
@@ -15,16 +16,15 @@ import Happstack.Server.Internal.TimeoutManager   (cancel, initialize, register)
 import Happstack.Server.Internal.TimeoutSocketTLS as TSS
 import Happstack.Server.Internal.Types            (Request, Response)
 import Network.Socket                             (HostName, PortNumber, Socket, sClose, socketPort)
-import Prelude                                    hiding (catch)
-import           OpenSSL                          (withOpenSSL)
-import           OpenSSL.Session                  (SSL, SSLContext)
-import qualified OpenSSL.Session                  as SSL
+import Network.TLS
+import Network.TLS.Extra.Cipher
 import Happstack.Server.Types                     (LogAccess, logMAccess)
 import System.IO.Error                            (ioeGetErrorType, isFullError, isDoesNotExistError)
 import System.Log.Logger                          (Priority(..), logM)
 #ifndef mingw32_HOST_OS
 import System.Posix.Signals                       (Handler(Ignore), installHandler, openEndedPipe)
 #endif
+
 
 -- | wrapper around 'logM' for this module
 log':: Priority -> String -> IO ()
@@ -61,7 +61,7 @@ nullTLSConf =
 -- see also: 'httpOnSocket'
 data HTTPS = HTTPS
     { httpsSocket :: Socket
-    , sslContext  :: SSLContext
+    , sslContext  :: ServerParams
     }
 
 -- | generate the 'HTTPS' record needed to start the https:\/\/ event loop
@@ -71,28 +71,27 @@ httpsOnSocket :: FilePath  -- ^ path to ssl certificate
               -> Maybe FilePath -- ^ path to PEM encoded list of CA certificates
               -> Socket    -- ^ listening socket (on which listen() has been called, but not accept())
               -> IO HTTPS
-httpsOnSocket cert key mca socket =
-    do ctx <- SSL.context
-       SSL.contextSetPrivateKeyFile  ctx key
-       SSL.contextSetCertificateFile ctx cert
-       case mca of
-         Nothing   -> return ()
-         (Just ca) -> SSL.contextSetCAFile ctx ca
-       SSL.contextSetDefaultCiphers  ctx
+httpsOnSocket cert key _ socket =
+    do creds <- credentialLoadX509 cert key
+       let credentials = either (\msg -> error $ "Can't load certificate " ++ cert ++ " and key " ++ key ++ ": " ++ msg) id creds
+       let params = def {
+            serverSupported = def { supportedCiphers = ciphersuite_strong },
+            serverShared = def { sharedCredentials = Credentials [credentials] }
+         }
+--       case mca of
+--         Nothing   -> return ()
+--         (Just ca) -> SSL.contextSetCAFile ctx ca
 
-       certOk <- SSL.contextCheckPrivateKey ctx
-       when (not certOk) $ error $ "OpenTLS certificate and key do not match."
-
-       return (HTTPS socket ctx)
+       return (HTTPS socket params)
 
 -- | accept a TLS connection
 acceptTLS :: Socket      -- ^ the socket returned from 'acceptLite'
-          -> SSLContext
-          -> IO SSL
-acceptTLS sck ctx =
+          -> ServerParams
+          -> IO Context
+acceptTLS sck params =
       handle (\ (e :: SomeException) -> sClose sck >> throwIO e) $ do
-          ssl <- SSL.connection ctx sck
-          SSL.accept ssl
+          ssl <- contextNew sck params
+          handshake ssl
           return ssl
 
 -- | https:// 'Request'/'Response' loop
@@ -105,7 +104,7 @@ listenTLS :: TLSConf                  -- ^ tls configuration
           -> (Request -> IO Response) -- ^ request handler
           -> IO ()
 listenTLS tlsConf hand =
-    do withOpenSSL $ return ()
+    do
        tlsSocket <- listenOn (tlsPort tlsConf)
        https     <- httpsOnSocket (tlsCert tlsConf) (tlsKey tlsConf) (tlsCA tlsConf) tlsSocket
        listenTLS' (tlsTimeout tlsConf) (tlsLogAccess tlsConf) https hand
@@ -125,7 +124,7 @@ listenTLS' timeout mlog https@(HTTPS lsocket _) handler = do
   installHandler openEndedPipe Ignore Nothing
 #endif
   tm <- initialize (timeout * (10^(6 :: Int)))
-  do let work :: (Socket, SSL, HostName, PortNumber) -> IO ()
+  do let work :: (Socket, Context, HostName, PortNumber) -> IO ()
          work (socket, ssl, hn, p) =
              do -- add this thread to the timeout table
                 tid     <- myThreadId
@@ -165,16 +164,16 @@ listenTLS' timeout mlog https@(HTTPS lsocket _) handler = do
        `finally` (sClose lsocket)
 
          where
-           shutdownClose :: Socket -> SSL -> IO ()
-           shutdownClose socket ssl =
-               do SSL.shutdown ssl SSL.Unidirectional `E.catch` ignoreException
-                  sClose socket                       `E.catch` ignoreException
+           shutdownClose :: Socket -> Context -> IO ()
+           shutdownClose _ ssl =
+               do bye ssl          `E.catch` ignoreException
+                  contextClose ssl `E.catch` ignoreException
 
            -- exception handlers
-           ignoreConnectionAbruptlyTerminated :: SSL.ConnectionAbruptlyTerminated -> IO ()
+           ignoreConnectionAbruptlyTerminated :: TLSException -> IO ()  -- FIXME
            ignoreConnectionAbruptlyTerminated _ = return ()
 
-           ignoreSSLException :: SSL.SomeSSLException -> IO ()
+           ignoreSSLException :: TLSException -> IO ()
            ignoreSSLException _ = return ()
 
            ignoreException :: SomeException -> IO ()
