@@ -1,20 +1,19 @@
 with (import <nixpkgs> {}).pkgs;
 let pkg = haskellngPackages.callPackage
             ({ mkDerivation, base, bytestring, extensible-exceptions
-             , happstack-server, hslogger, HsOpenSSL, network, openssl, sendfile
-             , stdenv, time, unix
+             , happstack-server, hslogger, network, sendfile
+             , stdenv, time, unix, tls, data-default-class
              }:
              mkDerivation {
-               pname = "happstack-server-tls";
-               version = "7.1.5";
+               pname = "happstack-server-tls-cryptonite";
+               version = "0.1.0";
                src = ./.;
                buildDepends = [
                  base bytestring extensible-exceptions happstack-server hslogger
-                 HsOpenSSL network sendfile time unix
+                 network sendfile time unix tls data-default-class
                ];
-               extraLibraries = [ openssl ];
                homepage = "http://www.happstack.com/";
-               description = "extend happstack-server with https:// support (TLS/SSL)";
+               description = "extend happstack-server with native https:// support (TLS/SSL)";
                license = stdenv.lib.licenses.bsd3;
              }) {};
 in
