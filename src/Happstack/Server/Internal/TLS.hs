@@ -6,6 +6,7 @@ module Happstack.Server.Internal.TLS where
 import Control.Concurrent                         (forkIO, killThread, myThreadId)
 import Control.Exception.Extensible               as E
 import Control.Monad                              (forever, when)
+import Crypto.Random.EntropyPool
 import Data.Default.Class
 import Data.Time                                  (UTCTime)
 import GHC.IO.Exception                           (IOErrorType(..))
@@ -72,11 +73,15 @@ httpsOnSocket :: FilePath  -- ^ path to ssl certificate
               -> Socket    -- ^ listening socket (on which listen() has been called, but not accept())
               -> IO HTTPS
 httpsOnSocket cert key _ socket =
-    do creds <- credentialLoadX509 cert key
+    do rndPool <- createEntropyPool
+       creds <- credentialLoadX509 cert key
        let credentials = either (\msg -> error $ "Can't load certificate " ++ cert ++ " and key " ++ key ++ ": " ++ msg) id creds
        let params = def {
             serverSupported = def { supportedCiphers = ciphersuite_strong },
-            serverShared = def { sharedCredentials = Credentials [credentials] }
+            serverShared = def {
+                sharedCredentials = Credentials [credentials],
+                sharedEntropyPool = Just rndPool
+             }
          }
 --       case mca of
 --         Nothing   -> return ()
