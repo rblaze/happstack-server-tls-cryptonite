@@ -1,11 +1,12 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 {- | core functions and types for HTTPS support
 -}
-module Happstack.Server.Internal.TLS where
+module Happstack.Server.Internal.Cryptonite.TLS where
 
 import Control.Concurrent                         (forkIO, killThread, myThreadId)
 import Control.Exception.Extensible               as E
 import Control.Monad                              (forever, when)
+import Crypto.Random.EntropyPool
 import Data.Default.Class
 import Data.Time                                  (UTCTime)
 import GHC.IO.Exception                           (IOErrorType(..))
@@ -13,7 +14,7 @@ import Happstack.Server.Internal.Listen           (listenOn)
 import Happstack.Server.Internal.Handler          (request)
 import Happstack.Server.Internal.Socket           (acceptLite)
 import Happstack.Server.Internal.TimeoutManager   (cancel, initialize, register)
-import Happstack.Server.Internal.TimeoutSocketTLS as TSS
+import Happstack.Server.Internal.Cryptonite.TimeoutSocketTLS as TSS
 import Happstack.Server.Internal.Types            (Request, Response)
 import Network.Socket                             (HostName, PortNumber, Socket, sClose, socketPort)
 import Network.TLS
@@ -76,7 +77,9 @@ httpsOnSocket cert key _ socket =
        let credentials = either (\msg -> error $ "Can't load certificate " ++ cert ++ " and key " ++ key ++ ": " ++ msg) id creds
        let params = def {
             serverSupported = def { supportedCiphers = ciphersuite_strong },
-            serverShared = def { sharedCredentials = Credentials [credentials] }
+            serverShared = def {
+                sharedCredentials = Credentials [credentials]
+             }
          }
 --       case mca of
 --         Nothing   -> return ()
