@@ -1,5 +1,5 @@
 Name:                happstack-server-tls-cryptonite
-Version:             0.1.0
+Version:             0.1.1
 Synopsis:            Extend happstack-server with native HTTPS support (TLS/SSL)
 Description:         Extend happstack-server with native HTTPS support (TLS/SSL)
 License:             BSD3
