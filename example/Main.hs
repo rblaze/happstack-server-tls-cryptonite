@@ -5,7 +5,7 @@ import Control.Concurrent  (forkIO)
 import Control.Monad       (msum)
 import Control.Monad.Trans (liftIO)
 import Happstack.Server    (Request(rqSecure), Response, ServerPart, askRq, dir, ok, notFound, toResponse, simpleHTTP, nullConf)
-import Happstack.Server.SimpleHTTPS (TLSConf(..), simpleHTTPS, nullTLSConf)
+import Happstack.Server.SimpleTLS (TLSConf(..), simpleHTTPS, nullTLSConf)
 import System.Random       (randomRIO)
 import System.Log.Logger
 

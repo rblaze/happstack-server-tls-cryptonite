@@ -2,7 +2,7 @@
 {- |
 -- borrowed from snap-server. Check there periodically for updates.
 -}
-module Happstack.Server.Internal.TimeoutSocketTLS where
+module Happstack.Server.Internal.Cryptonite.TimeoutSocketTLS where
 
 import           Control.Exception             (SomeException, catch)
 import qualified Data.ByteString.Char8         as B
